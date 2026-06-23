@@ -1,5 +1,4 @@
 # fingerprint-lid-check
-
 Skip fingerprint authentication when your laptop lid is closed.
 
 In docked setups with the lid closed, `pam_fprintd` will still prompt for a fingerprint on a sensor you can't reach. This project inserts a small PAM rule that detects the lid state via `/proc/acpi/button/lid/` and bypasses the fingerprint step automatically, going straight to password auth instead.
@@ -13,9 +12,9 @@ A shell script checks `/proc/acpi/button/lid/*/state` at authentication time.
 - If the lid is open, it falls through to fingerprint as normal.
   The install script patches `/etc/pam.d/common-auth` by inserting a `pam_exec` line directly before the `pam_fprintd` line.
 
-```
-Lid open   → pam_exec (skip) → pam_fprintd → pam_unix (fallback)
-Lid closed → pam_exec (jump) → pam_unix
+```text
+Lid open   → pam_exec → pam_fprintd → pam_unix (fallback)
+Lid closed → pam_exec → pam_unix
 ```
 
 ## Requirements
@@ -86,3 +85,21 @@ This removes the `pam_exec` line from `common-auth` and deletes `/usr/local/bin/
   ```bash
   sudo cp /etc/pam.d/common-auth.bak.<timestamp> /etc/pam.d/common-auth
   ```
+
+
+## Credits
+The core idea for intermediate pam script came from:
+
+https://unix.stackexchange.com/questions/678609/how-to-disable-fingerprint-authentication-when-laptop-lid-is-closed
+
+I just made it a easy script for future use when i reinstall linux and i would have needed to do the research again.
+
+And for other people to run. In the hope it works for them.
+
+## Future
+- [ ] Make it a contained program that could be installed with a repository manager
+  - [ ] integrated script (should make supporting other distros easier)
+  - [ ] integrated enable command
+  - [ ] integrated disable command
+- [ ] Support for other distro (currently tested on Mint)
+- [ ] Any bugs that arise for people.
