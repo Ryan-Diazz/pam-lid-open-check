@@ -2,7 +2,7 @@
 
 Skip fingerprint authentication when your laptop lid is closed.
 
-In docked setups with the lid closed, `pam_fprintd` will still prompt for a fingerprint on a sensor you can't reach. This project inserts a small PAM rule that detects the lid state via `/proc/acpi/button/lid/` and bypasses the fingerprint step automatically — falling straight through to password auth instead.
+In docked setups with the lid closed, `pam_fprintd` will still prompt for a fingerprint on a sensor you can't reach. This project inserts a small PAM rule that detects the lid state via `/proc/acpi/button/lid/` and bypasses the fingerprint step automatically, going straight to password auth instead.
 
 I run this on my laptop since i like the ergonomics of mounted monitors better than a desk height laptop screen.
 
@@ -15,10 +15,11 @@ A shell script checks `/proc/acpi/button/lid/*/state` at authentication time.
 
 ```
 Lid open   → pam_exec (skip) → pam_fprintd → pam_unix (fallback)
-Lid closed → pam_exec (jump) ────────────→ pam_unix
+Lid closed → pam_exec (jump) → pam_unix
 ```
 
 ## Requirements
+- debian/ubuntu based linux system using common-autth pam file
 - Linux with `/proc/acpi/button/lid/` support (most laptops)
 - `pam_exec.so` available (provided by `libpam-runtime`)
 - `pam_fprintd` already configured in `/etc/pam.d/common-auth`
@@ -33,16 +34,30 @@ in the script it is checked on `closed` keyword.
 
 
 ## Install
+
+#### Download repository zip or clone using
 ```bash
-sudo bash install.sh
+git clone https://github.com/Ryan-Diazz/fingerprint-lid-check.git
+```
+and go to the directory
+
+```bash
+cd fingerprint-lid-check
 ```
 
-update pam, do not allow changes to the common-auth file.
+#### Run the install script
+```bash
+sudo bash install-fingerprint-lid-check.sh
+```
+
+#### Update PAM
+do not allow changes to the common-auth file.
 ```bash
 sudo pam-auth-update
 ```
 
-Then verify it works in seperate terminal window with the lid open:
+#### Verify
+run this in a seperate terminal window with the lid open
 ```bash
 sudo -k && sudo ls
 ```
@@ -52,7 +67,7 @@ Close the lid and repeat, you should not be prompted for a fingerprint.
 
 ## Uninstall
 ```bash
-sudo bash uninstall.sh
+sudo bash uninstall-fingerprint-lid-check.sh
 ```
 
 This removes the `pam_exec` line from `common-auth` and deletes `/usr/local/bin/fingerprint-lid-check`. A timestamped backup of the PAM file is saved before any changes either way.
@@ -60,8 +75,8 @@ This removes the `pam_exec` line from `common-auth` and deletes `/usr/local/bin/
 ## Files
 | File                                   | Description                                       |
 | -------------------------------------- | ------------------------------------------------- |
-| `install.sh`                           | Installs the lid-check script and patches PAM     |
-| `uninstall.sh`                         | Reverses all changes made by the install script   |
+| `install-fingerprint-lid-check.sh`     | Installs the lid-check script and patches PAM     |
+| `uninstall-fingerprint-lid-check.sh`   | Reverses all changes made by the install script   |
 | `/usr/local/bin/fingerprint-lid-check` | Created by install — checked by PAM at auth time  |
 
 ## Safety notes
