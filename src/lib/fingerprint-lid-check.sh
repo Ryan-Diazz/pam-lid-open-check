@@ -5,10 +5,12 @@
 
 LID_STATE_FILE=$(find /proc/acpi/button/lid/*/state 2>/dev/null | head -1)
 if [ -z "$LID_STATE_FILE" ]; then
-    # No lid found (desktop?): treat as open, allow fingerprint
+    # No lid found, desktop?: treat as open, allow fingerprint
     exit 1
 fi
+
 STATE=$(cat "$LID_STATE_FILE" 2>/dev/null)
+
 if echo "$STATE" | grep -q "closed"; then
     exit 0  # Lid closed, skip fingerprint
 else
