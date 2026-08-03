@@ -109,5 +109,6 @@ deb: $(MODULE_TARGET) $(CLI_TARGET)
 
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -rf $(OUTPUT_DIR)
 
 .PHONY: build dist deb clean
