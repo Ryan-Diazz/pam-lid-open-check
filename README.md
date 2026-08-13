@@ -2,7 +2,7 @@
 **Skip fingerprint authentication when your laptop lid is closed**
 
 
-![lid-open-check logo](assets/pam-lid-open-check-logo.svg)
+![lid-open-check logo](assets/logo.svg)
 
 In docked setups with the lid closed, `pam_fprintd` can still prompt for a fingerprint on a sensor you can't reach. This project provides a small PAM module that checks the laptop's lid state via `/proc/acpi/button/lid/*/state` and skips fingerprint authentication when the lid is closed, allowing authentication to continue with a password instead.
 
