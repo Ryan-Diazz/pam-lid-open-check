@@ -61,6 +61,7 @@ jobs:
         with:
           name: deb
           path: .output/*.deb
+          include-hidden-files: true
           if-no-files-found: error
 
   arch:
@@ -86,6 +87,7 @@ jobs:
         with:
           name: arch
           path: .output/*.pkg.tar.*
+          include-hidden-files: true
           if-no-files-found: error
 
   release:
