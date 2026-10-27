@@ -1,114 +1,174 @@
 # Makefile for pam-lid-open-check
 
-CC      = gcc
-CFLAGS  = -Wall -Wextra
+CC      ?= gcc
+CFLAGS  ?= -O2
+CFLAGS  += -Wall -Wextra -fPIC
 
-PAM_INCLUDE = $(shell pkg-config --cflags-only-I libpam 2>/dev/null || echo "-I/usr/include")
-PAM_LIBS    = $(shell pkg-config --libs libpam 2>/dev/null || echo "-lpam")
+PAM_INCLUDE = $(shell pkg-config --cflags-only-I pam 2>/dev/null)
+PAM_LIBS    = $(shell pkg-config --libs pam 2>/dev/null || echo "-lpam")
 
-DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
-DEB_HOST_ARCH      ?= $(shell dpkg-architecture -qDEB_HOST_ARCH 2>/dev/null || echo "amd64")
-PAM_LIBDIR          = /lib/$(DEB_HOST_MULTIARCH)/security
+VERSION     = 1.2.0
+PACKAGE     = pam_lidcheck
+DESCRIPTION = PAM module that skips fingerprint auth when the laptop lid is closed
+MAINTAINER  = Ryan Diazz https://github.com/Ryan-Diazz
+URL         = https://github.com/Ryan-Diazz/pam_lidcheck
 
-VERSION = 1.1.0
-PACKAGE = lid-open-check
-
-BUILD_DIR 	= build
+BUILD_DIR   = build
 OUTPUT_DIR  = .output
-DIST_DIR 	= $(OUTPUT_DIR)/dist
 
-MODULE_SRC    = src/lib/pam/lid-open-check.c
-MODULE_OBJ    = $(BUILD_DIR)/pam/lid-open-check.o
-MODULE_TARGET = $(BUILD_DIR)/pam/lid-open-check.so
+MODULE_NAME   = pam_lidcheck
+MODULE_SRC    = src/pam_lidcheck.c
+MODULE_OBJ    = $(BUILD_DIR)/$(MODULE_NAME).o
+MODULE_TARGET = $(BUILD_DIR)/$(MODULE_NAME).so
 
-CLI_SRC    = src/lid-open-check-cli.c
-CLI_TARGET = $(BUILD_DIR)/lid-open-check-cli
+PROFILE_SRC = src/pam_lidcheck-profile
 
-BASH_COMPLETION_SRC = src/completions/lid-open-check-cli.bash
-
-PROFILE_SRC = src/lib/pam/lid-open-check-profile
-CONFIG_SRC  = src/pam-lid-open-check.conf
+# Install locations (overridden per package format)
+DESTDIR    ?=
+PAM_LIBDIR ?= /usr/lib/security
 
 
 # ====================================================
 # Build
 # ====================================================
-all: $(MODULE_TARGET) $(CLI_TARGET)
+all: $(MODULE_TARGET)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
-	mkdir -p $(BUILD_DIR)/pam
 
 $(MODULE_OBJ): $(MODULE_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -fPIC -DPAM_MODULE_NAME=lid_open_check $(PAM_INCLUDE) -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(PAM_INCLUDE) -c -o $@ $<
 
 $(MODULE_TARGET): $(MODULE_OBJ)
-	$(CC) -shared $(PAM_LIBS) -o $@ $^
+	$(CC) $(LDFLAGS) -shared -o $@ $^ $(PAM_LIBS)
 
-$(CLI_TARGET): $(CLI_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -o $@ $<
-
-# ====================================================config
-# Dist bundle (standalone: CLI + module + profile)
-# ====================================================
-dist: $(MODULE_TARGET) $(CLI_TARGET)
-	mkdir -p $(DIST_DIR)/module
-	mkdir -p $(DIST_DIR)/module/pam
-	mkdir -p $(DIST_DIR)/completions/bash
-	cp $(CLI_TARGET)    		$(DIST_DIR)/lid-open-check-cli
-	cp $(BASH_COMPLETION_SRC)	$(DIST_DIR)/completions/bash/lid-open-check-cli
-	cp $(MODULE_TARGET) 		$(DIST_DIR)/module/pam/lid-open-check.so
-	cp $(PROFILE_SRC)   		$(DIST_DIR)/module/pam/lid-open-check-profile
-	cp $(CONFIG_SRC)    		$(DIST_DIR)/pam-lid-open-check.conf
+install: $(MODULE_TARGET)
+	install -Dm0644 $(MODULE_TARGET) $(DESTDIR)$(PAM_LIBDIR)/$(MODULE_NAME).so
 
 # ====================================================
 # Debian package
 # ====================================================
+DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
+DEB_HOST_ARCH      ?= $(shell dpkg-architecture -qDEB_HOST_ARCH 2>/dev/null || echo "amd64")
+
+# Debian package names may not contain '_'
+DEB_PACKAGE = $(subst _,-,$(PACKAGE))
 DEB_STAGING = $(BUILD_DIR)/deb-staging
-DEB_TARGET  = $(OUTPUT_DIR)/$(PACKAGE)_$(VERSION)_$(DEB_HOST_ARCH).deb
+DEB_TARGET  = $(OUTPUT_DIR)/$(DEB_PACKAGE)_$(VERSION)_$(DEB_HOST_ARCH).deb
 
-deb: $(MODULE_TARGET) $(CLI_TARGET)
+# Same flags as dpkg-deb --root-owner-group, so no dpkg is needed to build
+DEB_TAR = tar --owner=0 --group=0 --numeric-owner --sort=name -czf
+
+define DEB_CONTROL
+Package: $(DEB_PACKAGE)
+Version: $(VERSION)
+Architecture: $(DEB_HOST_ARCH)
+Maintainer: $(MAINTAINER)
+Homepage: $(URL)
+Depends: libpam-runtime (>= 0.76)
+Description: $(DESCRIPTION)
+endef
+export DEB_CONTROL
+
+define DEB_POSTINST
+#!/bin/sh
+set -e
+pam-auth-update --package
+endef
+export DEB_POSTINST
+
+define DEB_PRERM
+#!/bin/sh
+set -e
+if [ "$$1" = "remove" ]; then
+	pam-auth-update --package --remove $(MODULE_NAME)
+fi
+endef
+export DEB_PRERM
+
+deb: $(MODULE_TARGET)
 	rm -rf $(DEB_STAGING)
-	mkdir -p $(DEB_STAGING)/DEBIAN
-	mkdir -p $(DEB_STAGING)$(PAM_LIBDIR)
-	mkdir -p $(DEB_STAGING)/usr/share/pam-configs
-	mkdir -p $(DEB_STAGING)/usr/share/bash-completion/completions
-	mkdir -p $(DEB_STAGING)/usr/local/bin
-	mkdir -p $(DEB_STAGING)/etc
+	$(MAKE) install DESTDIR=$(DEB_STAGING) PAM_LIBDIR=/usr/lib/$(DEB_HOST_MULTIARCH)/security
+	install -Dm0644 $(PROFILE_SRC) $(DEB_STAGING)/usr/share/pam-configs/$(MODULE_NAME)
 
-	cp $(MODULE_TARGET) 		$(DEB_STAGING)$(PAM_LIBDIR)/pam_lid-open-check.so
-	cp $(PROFILE_SRC)   		$(DEB_STAGING)/usr/share/pam-configs/lid-open-check
-	cp $(CONFIG_SRC)    		$(DEB_STAGING)/etc/pam-lid-open-check.conf
-	cp $(CLI_TARGET)    		$(DEB_STAGING)/usr/local/bin/lid-open-check-cli
-	cp $(BASH_COMPLETION_SRC)	$(DEB_STAGING)/usr/share/bash-completion/completions/lid-open-check-cli
+	mkdir -p $(DEB_STAGING)/control
+	printf '%s\n' "$$DEB_CONTROL"  > $(DEB_STAGING)/control/control
+	printf '%s\n' "$$DEB_POSTINST" > $(DEB_STAGING)/control/postinst
+	printf '%s\n' "$$DEB_PRERM"    > $(DEB_STAGING)/control/prerm
+	chmod 0755 $(DEB_STAGING)/control/postinst $(DEB_STAGING)/control/prerm
+	cd $(DEB_STAGING) && find usr -type f -exec md5sum {} + > control/md5sums
 
-	chmod 0644 $(DEB_STAGING)$(PAM_LIBDIR)/pam_lid-open-check.so
-	chmod 0644 $(DEB_STAGING)/usr/share/pam-configs/lid-open-check
-	chmod 0644 $(DEB_STAGING)/etc/pam-lid-open-check.conf
-	chmod 0755 $(DEB_STAGING)/usr/local/bin/lid-open-check-cli
-	chmod 0644 $(DEB_STAGING)/usr/share/bash-completion/completions/lid-open-check-cli
+	$(DEB_TAR) $(DEB_STAGING)/control.tar.gz -C $(DEB_STAGING)/control .
+	$(DEB_TAR) $(DEB_STAGING)/data.tar.gz    -C $(DEB_STAGING) ./usr
+	printf '2.0\n' > $(DEB_STAGING)/debian-binary
 
-	printf 'Package: $(PACKAGE)\nVersion: $(VERSION)\nArchitecture: $(DEB_HOST_ARCH)\nMaintainer: Ryan Diazz https://github.com/Ryan-Diazz \nDepends: libpam-runtime (>= 0.76)\nDescription: PAM module that blocks fingerprint auth when the laptop lid is closed\n' \
-		> $(DEB_STAGING)/DEBIAN/control
-
-	printf '/etc/pam-lid-open-check.conf\n' \
-		> $(DEB_STAGING)/DEBIAN/conffiles
-
-	printf '#!/bin/sh\nset -e\npam-auth-update --enable lid-open-check\n' \
-		> $(DEB_STAGING)/DEBIAN/postinst
-	chmod 0755 $(DEB_STAGING)/DEBIAN/postinst
-
-	printf '#!/bin/sh\nset -e\npam-auth-update --remove lid-open-check\n' \
-		> $(DEB_STAGING)/DEBIAN/prerm
-	chmod 0755 $(DEB_STAGING)/DEBIAN/prerm
-
-	dpkg-deb --build $(DEB_STAGING) $(DEB_TARGET)
+	mkdir -p $(OUTPUT_DIR)
+	rm -f $(DEB_TARGET)
+	cd $(DEB_STAGING) && ar rcD '$(abspath $(DEB_TARGET))' debian-binary control.tar.gz data.tar.gz
 	@echo ""
 	@echo "Package: $(DEB_TARGET)"
 	@echo "Install with: sudo dpkg -i $(DEB_TARGET)"
+
+# ====================================================
+# Arch package
+# ====================================================
+ARCH_STAGING = $(BUILD_DIR)/arch-staging
+ARCH_HOST    ?= $(shell uname -m)
+ARCH_PKGEXT  = .pkg.tar.gz
+ARCH_TARGET  = $(OUTPUT_DIR)/$(PACKAGE)-$(VERSION)-$(ARCH_HOST)$(ARCH_PKGEXT)
+
+# makepkg builds from the project root using its own CFLAGS/LDFLAGS
+define ARCH_PKGBUILD
+pkgname=$(PACKAGE)
+pkgver=$(VERSION)
+pkgrel=1
+pkgdesc='$(DESCRIPTION)'
+arch=('$(ARCH_HOST)')
+url='$(URL)'
+license=('MIT')
+depends=('pam')
+options=('!debug')
+install=$(PACKAGE).install
+
+build() {
+	make -C '$(CURDIR)' BUILD_DIR="$$srcdir/build" all
+}
+
+package() {
+	make -C '$(CURDIR)' BUILD_DIR="$$srcdir/build" DESTDIR="$$pkgdir" PAM_LIBDIR=/usr/lib/security install
+	install -Dm0644 '$(CURDIR)/LICENSE' "$$pkgdir/usr/share/licenses/$$pkgname/LICENSE"
+}
+endef
+export ARCH_PKGBUILD
+
+define ARCH_INSTALL
+post_install() {
+	echo "==> Arch has no pam-auth-update; enable the module manually."
+	echo "==> Add this line to /etc/pam.d/system-auth directly above pam_fprintd.so:"
+	echo "==>   auth  [success=1 default=ignore]  $(MODULE_NAME).so"
+}
+
+pre_remove() {
+	echo "==> Remove the $(MODULE_NAME).so line from /etc/pam.d/* before uninstalling."
+}
+endef
+export ARCH_INSTALL
+
+arch:
+	rm -rf $(ARCH_STAGING)
+	mkdir -p $(ARCH_STAGING) $(OUTPUT_DIR)
+	printf '%s\n' "$$ARCH_PKGBUILD" > $(ARCH_STAGING)/PKGBUILD
+	printf '%s\n' "$$ARCH_INSTALL"  > $(ARCH_STAGING)/$(PACKAGE).install
+	cd $(ARCH_STAGING) && PKGDEST='$(abspath $(OUTPUT_DIR))' PKGEXT='$(ARCH_PKGEXT)' makepkg --force --cleanbuild
+	@echo ""
+	@echo "Package: $(ARCH_TARGET)"
+	@echo "Install with: sudo pacman -U $(ARCH_TARGET)"
 
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -rf $(OUTPUT_DIR)
 
-.PHONY: build dist deb clean
+clean-build:
+	rm -rf $(BUILD_DIR)
+
+.PHONY: all install deb arch clean
