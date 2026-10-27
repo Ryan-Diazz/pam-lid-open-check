@@ -36,25 +36,72 @@ This module checks for the `closed` and `open` keywords.
 ### Debian/Ubuntu
 
 #### 1. Download
-Download the latest `.deb` package from the releases page.
+Download the latest `pam-lidcheck_x.x.x_amd64.deb` from the releases page.
 
-#### 2. install with `dpkg` 
+#### 2. Install
 ```bash
-sudo dpkg -i lid-open-check_x.x.x_amd64.deb
+sudo apt install ./pam-lidcheck_x.x.x_amd64.deb
 ```
+(`sudo dpkg -i pam-lidcheck_x.x.x_amd64.deb` works too, but won't pull in missing dependencies.)
 
-#### 3. Enable the PAM module
-Run:
+#### 3. Check that the module is enabled
+The package enables the module automatically through `pam-auth-update`, placing it directly above `pam_fprintd`. No manual edits are needed.
+
+To check or toggle it, run:
 ```bash
 sudo pam-auth-update
 ```
-Enable `pam_lidcheck` by selecting it in the PAM configuration menu.
+and look for *Lid Open Check - Fingerprint Authentication Control*.
 
 #### Removal
-When installed using the .deb package run:
 ```bash
-sudo apt remove lid-open-check
+sudo apt remove pam-lidcheck
 ```
+This also removes the module from the PAM configuration.
+
+### Arch Linux
+
+#### 1. Download
+Download the latest `pam_lidcheck-x.x.x-1-x86_64.pkg.tar.gz` from the releases page, or [build it yourself](#build-from-source).
+
+#### 2. Install
+```bash
+sudo pacman -U pam_lidcheck-x.x.x-1-x86_64.pkg.tar.gz
+```
+This installs the module to `/usr/lib/security/pam_lidcheck.so`.
+
+#### 3. Enable the PAM module
+Arch has no `pam-auth-update`, so the module has to be added to the PAM configuration manually.
+
+Find the files where `pam_fprintd` is configured:
+```bash
+grep -l pam_fprintd /etc/pam.d/*
+```
+In each of these files, add the following line **directly above** the `pam_fprintd.so` line:
+```text
+auth    [success=1 default=ignore]    pam_lidcheck.so
+```
+For example, `/etc/pam.d/sudo`:
+```text
+auth    [success=1 default=ignore]    pam_lidcheck.so
+auth    sufficient                    pam_fprintd.so
+auth    include                       system-auth
+```
+`success=1` tells PAM to skip the next line (`pam_fprintd`) when the lid is closed. If there are other lines between `pam_lidcheck.so` and `pam_fprintd.so`, increase the `success=x` number accordingly.
+
+#### Removal
+First remove the `pam_lidcheck.so` lines from `/etc/pam.d/*`, then uninstall the package:
+```bash
+sudo pacman -R pam_lidcheck
+```
+> **Warning:** Do this in this order. If the package is removed while `/etc/pam.d/*` still references `pam_lidcheck.so`, authentication for those services can fail.
+
+### Build from source
+```bash
+make deb    # .output/pam-lidcheck_x.x.x_amd64.deb
+make arch   # .output/pam_lidcheck-x.x.x-1-x86_64.pkg.tar.gz
+```
+See [BUILD.md](BUILD.md) for prerequisites and details.
 
 ## Safety notes
 - Keep a root terminal open while testing PAM changes in case authentication stops working.
@@ -85,4 +132,5 @@ I initially implemented the solution as an installation script based on that wor
 
 ## Future
 - [x] ~~Make it a contained program that could be installed with a repository manager~~
-- [ ] Support for other distro (currently tested on Mint)
+- [x] ~~Support for Arch Linux~~
+- [ ] Support for other distros (currently tested on Mint)
