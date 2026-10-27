@@ -1,9 +1,0 @@
-# PAM configuration profile for pam-auth-update
-# Location: /usr/share/pam-configs/pam-lid-open-check
-
-Name: Lid Open Check - Fingerprint Authentication Control
-Default: yes
-Priority: 270
-Auth-Type: Primary
-Auth:
-	[success=2 default=ignore]	pam_lid-open-check.so
